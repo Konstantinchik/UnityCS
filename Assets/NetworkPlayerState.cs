@@ -21,7 +21,7 @@ namespace ForceCodeFPS
             if (IsOwner)
             {
                 LocalPlayerState = this;
-                PlayerName.Value = NetworkPlayerData.PlayerName;    //LocalPlayerName;
+                PlayerName.Value = "MyName";    // NetworkPlayerData.instance.GetPlayerName;    //LocalPlayerName;
             }
         }
 

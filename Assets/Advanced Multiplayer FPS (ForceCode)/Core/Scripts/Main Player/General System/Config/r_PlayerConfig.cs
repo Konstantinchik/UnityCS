@@ -41,8 +41,8 @@ namespace ForceCodeFPS
                 SubmitNameToServer(GetLocalPlayerName());
             }
 
-            SetObjectName(m_PlayerName.Value);
-            m_PlayerName.OnValueChanged += (_, newValue) => SetObjectName(newValue);
+            SetObjectName(m_PlayerName.Value.ToString());
+            m_PlayerName.OnValueChanged += (_, newValue) => SetObjectName(newValue.ToString());
         }
 
         private void EnableLocalSettings()

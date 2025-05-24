@@ -56,20 +56,20 @@ namespace ForceCodeFPS
                 m_UsernameInput.text = savedName;
 
                 // Вы можешь здесь сохранить это имя в Singleton или сетевом объекте, чтобы передать его при спавне
-                NetworkPlayerData.LocalPlayerName = savedName;
+                //NetworkPlayerData.in = savedName;
             }
             else
             {
                 string generatedName = "Player" + Random.Range(1, 999);
                 m_UsernameInput.text = generatedName;
-                NetworkPlayerData.LocalPlayerName = generatedName;
+                //NetworkPlayerData.in  //LocalPlayerName = generatedName;
             }
         }
 
         private void SaveUsername(string _Username)
         {
             PlayerPrefs.SetString("username", _Username);
-            NetworkPlayerData.LocalPlayerName = _Username;
+            //NetworkPlayerData.LocalPlayerName = _Username;
         }
 
         private void SetDefaultMenuPanel()
@@ -125,6 +125,16 @@ namespace ForceCodeFPS
     // Хранилище имени игрока для NGO
     public class NetworkPlayerData : NetworkBehaviour
     {
+        public NetworkPlayerData instance;
+
+        // КОСТЫЛЬ
+        //public string GetPlayerName{get=>PlayerName.Value;}
+
+        private void Awake()
+        {
+            instance = this;
+        }
+
         public NetworkVariable<string> PlayerName = new("Player", NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
     }
 }

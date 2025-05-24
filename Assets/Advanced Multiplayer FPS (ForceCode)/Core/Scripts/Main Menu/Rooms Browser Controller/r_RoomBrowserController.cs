@@ -41,7 +41,7 @@ namespace ForceCodeFPS
             foreach (var room in localRooms)
             {
                 var item = Instantiate(m_RoomBrowserItem, m_RoomBrowserContent);
-                item.SetupRoom(room);
+                //item.SetupRoom(room);
             }
         }
 

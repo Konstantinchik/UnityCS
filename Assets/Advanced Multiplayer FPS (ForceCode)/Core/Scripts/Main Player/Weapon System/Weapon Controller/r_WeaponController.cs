@@ -864,7 +864,7 @@ namespace ForceCodeFPS
             this.m_PlayerCamera.m_WeaponCameraFOVSpeed = this.m_WeaponConfig.m_weaponAimSettings.m_aimFOVSpeed;
         }
 
-        private IEnumerator PhotonDestroy(GameObject _object, float _time)
+        private IEnumerator NgoDestroy(GameObject _object, float _time)
         {
             if (_object == null) yield return true;
 

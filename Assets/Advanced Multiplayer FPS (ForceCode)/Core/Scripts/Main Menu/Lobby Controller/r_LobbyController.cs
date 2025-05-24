@@ -146,7 +146,7 @@ namespace ForceCodeFPS
             if (NetworkManager.Singleton.IsHost || NetworkManager.Singleton.IsClient)
             {
                 m_LobbyUI.m_GameInformationText.text = $"{GameSettings.CurrentMapName} / {GameSettings.CurrentGameMode}";
-                m_LobbyUI.m_GameMapImage.sprite = r_CreateRoomController.instance.GetMapSprite(GameSettings.CurrentMapName);
+                //m_LobbyUI.m_GameMapImage.sprite = r_CreateRoomController.instance.GetMapSprite(GameSettings.CurrentMapName);
             }
             else
             {

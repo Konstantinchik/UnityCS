@@ -179,4 +179,32 @@ public class r_PlayerAudio : NetworkBehaviour
         slideSource.loop = true;
         slideSource.Play();
     }
+
+    #region OnPlayerHurtAudioPlay
+    public void OnPlayerHurtAudioPlay(Vector3 position)
+    {
+        if (!IsOwner) return;
+        PlayHurtSoundServerRpc(position);
+    }
+
+    [ServerRpc]
+    private void PlayHurtSoundServerRpc(Vector3 position)
+    {
+        PlayHurtSoundClientRpc(position);
+    }
+
+    [ClientRpc]
+    private void PlayHurtSoundClientRpc(Vector3 position)
+    {
+        if (IsOwner) return;
+
+        // Воспроизведение звука удара
+        // weaponSource используется условно — можешь завести отдельный AudioSource, если нужно
+        if (weaponSource != null && weaponSource.clip != null)
+        {
+            weaponSource.transform.position = position;
+            weaponSource.Play();
+        }
+    }
+    #endregion
 }

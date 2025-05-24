@@ -213,7 +213,7 @@ namespace ForceCodeFPS
             this.m_HitmarkerImage.gameObject.SetActive(false);
             SetBloodyScreenAlpha(0);
             SetDamageIndicatorAlpha(0);
-            SetHealthText(this.m_PlayerController.m_PlayerHealth.m_Health);
+            SetHealthText(this.m_PlayerController.m_PlayerHealth.m_Health.Value);
         }
 
         public void SetBloodyScreen()

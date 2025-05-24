@@ -132,6 +132,36 @@ namespace ForceCodeFPS
                 PickupWeaponServerRpc(weaponID);
         }
 
+        public void OnLoadoutSelect(int[] weaponIndexes)
+        {
+            if (IsOwner)
+            {
+                SelectLoadoutServerRpc(weaponIndexes);
+            }
+        }
+
+        [ServerRpc]
+        private void SelectLoadoutServerRpc(int[] weaponIndexes)
+        {
+            for (int i = 0; i < weaponIndexes.Length; i++)
+            {
+                int weaponID = weaponIndexes[i];
+                var weaponData = m_AllWeapons.FirstOrDefault(w => w.m_WeaponData.m_WeaponID == weaponID)?.m_WeaponData;
+                if (weaponData == null) continue;
+
+                var newWeapon = new r_WeaponManagerData { m_WeaponData = weaponData };
+                m_LocalWeapons.Add(newWeapon);
+                m_NetworkWeaponIDs.Add(weaponID);
+
+                int newIndex = m_LocalWeapons.Count - 1;
+                CreateWeapon(newIndex, weaponID);
+            }
+
+            if (m_LocalWeapons.Count > 0)
+                ChangeWeaponClientRpc(0);
+        }
+
+
         [ServerRpc]
         private void PickupWeaponServerRpc(int weaponID)
         {

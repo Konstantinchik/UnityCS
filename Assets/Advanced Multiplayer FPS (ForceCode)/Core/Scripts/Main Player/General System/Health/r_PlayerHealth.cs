@@ -85,11 +85,12 @@ namespace ForceCodeFPS
 
         #region Client RPCs
         [ClientRpc]
-        private void DecreaseHealthClientRpc(string senderName, float amount, Vector3 senderPosition)
+        private void DecreaseHealthClientRpc(ulong senderClientId, float amount, Vector3 senderPosition)
         {
             if (IsOwner)
             {
-                m_PlayerController.m_PlayerUI.SetDamageIndicator(senderName, senderPosition);
+                //string senderName = "Player " + senderClientId;
+                m_PlayerController.m_PlayerUI.SetDamageIndicator(senderClientId, senderPosition);
                 m_PlayerController.m_PlayerAudio.OnPlayerHurtAudioPlay(transform.position);
             }
 

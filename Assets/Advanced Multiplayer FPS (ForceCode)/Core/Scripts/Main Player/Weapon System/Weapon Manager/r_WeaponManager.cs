@@ -9,7 +9,6 @@ namespace ForceCodeFPS
 {
     [System.Serializable] public enum r_WeaponItemType { PRIMARY, SECONDARY, LETHAL, TACTICAL }
 
-    [System.Serializable]
     public class r_WeaponManagerData
     {
         [Header("Weapon Data")]
@@ -227,6 +226,12 @@ namespace ForceCodeFPS
             }
 
             m_ChangingWeapon = false;
+        }
+
+        // ÇÀÃËÓØÊÀ, ÏÅÐÅÄÅËÛÂÀÒÜ
+        public r_WeaponManagerData FindWeaponByName(string weaponName)
+        {
+            return m_LocalWeapons.FirstOrDefault(w => w.m_WeaponData.m_WeaponName == weaponName);
         }
     }
 }

@@ -1,244 +1,459 @@
-// Переработанный r_WeaponManager с улучшениями для Netcode for GameObjects
-
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Unity.Netcode;
-using System.Linq;
 
 namespace ForceCodeFPS
 {
-    [System.Serializable] public enum r_WeaponItemType { PRIMARY, SECONDARY, LETHAL, TACTICAL }
-
+    #region Serializable Classes
     [System.Serializable]
-    public class r_WeaponManagerData
+    public class r_ThirdPersonWeaponSlotItem
     {
-        [Header("Weapon Data")]
-        public r_WeaponPickupBase m_WeaponData;
-
-        [Header("Runtime Data")]
-        [HideInInspector] public r_WeaponController m_WeaponObject_FP;
-        [HideInInspector] public r_ThirdPersonWeapon m_WeaponObject_TP;
-
-        [Header("Unique runtime ID")]
-        [HideInInspector] public string m_UniqueID = System.Guid.NewGuid().ToString();
+        public GameObject m_ThirdPersonWeapon;
+        public string m_UniqueID;
     }
 
-    public class r_WeaponManager : NetworkBehaviour
+    [System.Serializable]
+    public class r_ThirdPersonWeaponSlot
     {
+        public r_WeaponItemType m_WeaponType;
+        public Transform m_WeaponSlot;
+        public List<r_ThirdPersonWeaponSlotItem> m_SlotWeapons;
+    }
+    #endregion
+
+    public class r_ThirdPersonManager : NetworkBehaviour
+    {
+        #region References
         public r_PlayerController m_PlayerController;
+        #endregion
 
-        [Header("Weapon Holder")]
-        [SerializeField] private Transform m_WeaponParent;
+        #region Public Variables
+        [Header("Character Animator")]
+        public Animator m_ThirdPersonAnimator;
 
-        [Header("Camera Holder")]
-        [SerializeField] private Camera m_Camera;
+        [Header("Third Person Death Camera")]
+        public r_ThirdPersonCamera m_ThirdPersonCamera;
 
-        [Space(10)]
-        public List<r_WeaponManagerData> m_AllWeapons = new();
-        public List<r_WeaponManagerData> m_LocalWeapons = new();
-        private NetworkList<int> m_NetworkWeaponIDs;
+        [Header("Spectate Holder Transform")]
+        public Transform m_SpectateHolder;
 
-        [Header("Pickup Settings")]
-        [SerializeField] private int m_WeaponSlots;
-        [SerializeField] private float m_PickupDistance;
+        [Header("Weapon Manager")]
+        public Transform m_WeaponParent;
 
-        [Header("Drop Settings")]
-        [SerializeField] private float m_WeaponDropForce;
+        [Header("Animator Layer Settings")]
+        public int m_WeaponAnimationLayer;
 
-        [Header("Ammunation Settings")]
-        public int m_TotalAmmunation;
+        public List<r_ThirdPersonWeaponSlot> m_WeaponSlots = new List<r_ThirdPersonWeaponSlot>();
+        public List<r_ThirdPersonBodyPart> m_BodyParts = new List<r_ThirdPersonBodyPart>();
+        public Renderer[] m_localRenderersOnlyShadows;
+        #endregion
 
-        private NetworkVariable<int> m_CurrentWeaponIndex = new(-1);
+        #region Private Variables
+        public r_WeaponManagerData m_CurrentWeapon;
+        [Range(0, 1)] public float m_CurrentLeftHandWeight;
+        public float m_AnimatorLeanAngle = 0;
+        #endregion
 
-        [HideInInspector] public bool m_ChangingWeapon;
-        [HideInInspector] public bool m_ReloadingWeapon;
-        [HideInInspector] public r_WeaponManagerData m_CurrentWeapon = null;
+        #region Network Variables
+        private NetworkVariable<bool> m_IsFiring = new NetworkVariable<bool>();
+        private NetworkVariable<bool> m_IsReloading = new NetworkVariable<bool>();
+        private NetworkVariable<bool> m_ShellEjected = new NetworkVariable<bool>();
+        #endregion
 
-        public override void OnNetworkSpawn()
+        #region Unity Methods
+        private void Start()
         {
-            m_NetworkWeaponIDs = new NetworkList<int>();
-            m_NetworkWeaponIDs.OnListChanged += OnNetworkWeaponsChanged;
-        }
-
-        public override void OnNetworkDespawn()
-        {
-            m_NetworkWeaponIDs.OnListChanged -= OnNetworkWeaponsChanged;
-        }
-
-        private void OnNetworkWeaponsChanged(NetworkListEvent<int> change)
-        {
-            if (!IsOwner && change.Type == NetworkListEvent<int>.EventType.Add)
-            {
-                int index = change.Index;
-                int weaponID = change.Value;
-                CreateWeapon(index, weaponID);
-            }
+            if (!IsOwner) return;
+            Setup();
         }
 
         private void Update()
         {
             if (!IsOwner) return;
+            if (m_PlayerController == null || m_ThirdPersonAnimator == null) return;
 
-            HandleInputs();
-            HandleStates();
+            HandleAnimator();
+            HandleLeaning();
         }
 
-        private void HandleInputs()
+        public override void OnNetworkSpawn()
         {
-            if (Physics.Raycast(m_Camera.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2, 0)), out RaycastHit hit, m_PickupDistance))
+            base.OnNetworkSpawn();
+            
+            m_IsFiring.OnValueChanged += OnWeaponFireEvent;
+            m_IsReloading.OnValueChanged += OnWeaponReloadEvent;
+            m_ShellEjected.OnValueChanged += OnShellEjectEvent;
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            base.OnNetworkDespawn();
+            
+            m_IsFiring.OnValueChanged -= OnWeaponFireEvent;
+            m_IsReloading.OnValueChanged -= OnWeaponReloadEvent;
+            m_ShellEjected.OnValueChanged -= OnShellEjectEvent;
+        }
+        #endregion
+
+        #region Handling
+        private void HandleAnimator()
+        {
+            //Set jumping boolean
+            m_ThirdPersonAnimator.SetBool("Jumping", !m_PlayerController.m_CharacterController.isGrounded);
+
+            //Horizontal and vertical movement with smoothness
+            m_ThirdPersonAnimator.SetFloat("MoveX", m_PlayerController.m_InputManager.GetHorizontal(), 0.1f, Time.deltaTime);
+            m_ThirdPersonAnimator.SetFloat("MoveZ", m_PlayerController.m_InputManager.GetVertical(), 0.1f, Time.deltaTime);
+
+            //Set other movement booleans
+            m_ThirdPersonAnimator.SetBool("Sprinting", m_PlayerController.m_MoveState == r_MoveState.SPRINTING);
+            m_ThirdPersonAnimator.SetBool("Crouching", m_PlayerController.m_MoveState == r_MoveState.CROUCHING);
+            m_ThirdPersonAnimator.SetBool("Sliding", m_PlayerController.m_MoveState == r_MoveState.SLIDING);
+
+            //Set weapon ID
+            m_ThirdPersonAnimator.SetInteger("weaponID", 
+                m_PlayerController.m_WeaponManager.m_CurrentWeaponIndex == 0 && 
+                m_PlayerController.m_WeaponManager.m_LocalWeapons.Count == 0 ? 
+                -1 : m_CurrentWeapon.m_WeaponData.m_WeaponID);
+
+            //Smooth hand transition
+            m_CurrentLeftHandWeight = Mathf.Lerp(m_CurrentLeftHandWeight, 
+                m_CurrentWeapon != null && 
+                !m_PlayerController.m_WeaponManager.m_ChangingWeapon && 
+                !m_PlayerController.m_WeaponManager.m_ReloadingWeapon ? 1 : 0, 
+                Time.deltaTime * 8f);
+        }
+
+        private void HandleLeaning()
+        {
+            var _player_camera = m_PlayerController.m_PlayerCamera;
+            float _animation_lean_angle = 0;
+            float _animation_lean_speed = _player_camera.m_CameraBase.m_CameraLeanSettings.m_AnimatorLeanChangeSpeed;
+
+            if (_player_camera.m_CameraRotationLeanAngle < 0)
             {
-                var weaponPickup = hit.transform.GetComponent<r_WeaponPickup>();
-                var ui = m_PlayerController.m_PlayerUI;
-
-                if (weaponPickup != null)
-                {
-                    if (!ui.m_WeaponPickupImage.gameObject.activeSelf) ui.m_WeaponPickupImage.gameObject.SetActive(true);
-
-                    ui.m_WeaponPickupText.text = $"Hold [F] to pickup [{weaponPickup.m_WeaponPickupData.m_WeaponName}]";
-                    ui.m_WeaponPickupImage.texture = weaponPickup.m_WeaponPickupData.m_WeaponTexture;
-
-                    if (m_PlayerController.m_InputManager.WeaponPickKey())
-                    {
-                        OnValidatePickup(weaponPickup.m_WeaponPickupData.m_WeaponID);
-                        weaponPickup.OnPickup();
-                    }
-                }
-                else if (ui.m_WeaponPickupImage.gameObject.activeSelf)
-                {
-                    ui.m_WeaponPickupImage.gameObject.SetActive(false);
-                }
+                _animation_lean_angle = -_player_camera.m_CameraBase.m_CameraLeanSettings.m_MaxLeanAngleAnimator;
+            }
+            else if (_player_camera.m_CameraRotationLeanAngle > 0)
+            {
+                _animation_lean_angle = _player_camera.m_CameraBase.m_CameraLeanSettings.m_MaxLeanAngleAnimator;
             }
 
-            if (m_PlayerController.m_InputManager.WeaponDropKey() && m_LocalWeapons.Count > 0 && !m_ChangingWeapon)
-            {
-                DropWeaponServerRpc(m_CurrentWeaponIndex.Value);
-            }
+            m_AnimatorLeanAngle = Mathf.Lerp(m_AnimatorLeanAngle, _animation_lean_angle, Time.deltaTime * _animation_lean_speed);
+            m_ThirdPersonAnimator.SetFloat("Leaning", m_AnimatorLeanAngle);
+        }
+        #endregion
 
-            if (m_LocalWeapons.Count > 0 && !m_ChangingWeapon)
+        #region Actions
+        private void Setup()
+        {
+            SetLocalRendererShadows(ShadowCastingMode.ShadowsOnly);
+            DeActivateRagdoll();
+        }
+
+        public void ActivateRagdoll()
+        {
+            if (m_BodyParts == null) return;
+
+            foreach (r_ThirdPersonBodyPart _BodyPart in m_BodyParts)
             {
-                for (int i = 1; i <= m_LocalWeapons.Count && i <= 5; i++)
+                if (_BodyPart.m_BodyParts.m_BodyPartRigidbody != null && 
+                    _BodyPart.m_BodyParts.m_BodyPartCollider != null)
                 {
-                    if (Input.GetKeyDown(KeyCode.Alpha0 + i))
-                        ChangeWeaponServerRpc(i - 1);
+                    _BodyPart.m_BodyParts.m_BodyPartRigidbody.drag = 0.5f;
+                    _BodyPart.m_BodyParts.m_BodyPartRigidbody.isKinematic = false;
+                    if (IsOwner) _BodyPart.m_BodyParts.m_BodyPartCollider.enabled = true;
                 }
             }
         }
 
-        private void HandleStates()
+        public void DeActivateRagdoll()
         {
-            m_ReloadingWeapon = m_LocalWeapons.Any(w => w.m_WeaponObject_FP != null && w.m_WeaponObject_FP.IsReloading);
+            if (m_BodyParts == null) return;
+
+            foreach (r_ThirdPersonBodyPart _BodyPart in m_BodyParts)
+            {
+                if (_BodyPart.m_BodyParts.m_BodyPartRigidbody != null && 
+                    _BodyPart.m_BodyParts.m_BodyPartCollider != null)
+                {
+                    _BodyPart.m_BodyParts.m_BodyPartRigidbody.isKinematic = true;
+                    if (IsOwner) _BodyPart.m_BodyParts.m_BodyPartCollider.enabled = false;
+                }
+            }
         }
 
-        private void OnValidatePickup(int weaponID)
+        public void ThirdPersonSuicide()
         {
-            if (m_LocalWeapons.Count >= m_WeaponSlots)
-                SwapWeaponServerRpc(weaponID);
+            SetLocalRendererShadows(ShadowCastingMode.On);
+            Component[] _Components = transform.GetComponents<Component>();
+
+            foreach (Component _Component in _Components)
+            {
+                if (_Component is Transform) continue;
+                Destroy(_Component);
+            }
+
+            ActivateRagdoll();
+        }
+
+        public void PlayAnimation(r_AnimationType _type, string _animationName, bool _setBool, int _layer)
+        {
+            switch (_type)
+            {
+                case r_AnimationType.PLAY: 
+                    m_ThirdPersonAnimator.Play(_animationName, _layer, 0f); 
+                    break;
+                case r_AnimationType.SETTRIGGER: 
+                    m_ThirdPersonAnimator.SetTrigger(_animationName); 
+                    break;
+                case r_AnimationType.SETBOOL: 
+                    m_ThirdPersonAnimator.SetBool(_animationName, _setBool); 
+                    break;
+            }
+        }
+
+        public void OnWeaponFire()
+        {
+            if (IsServer)
+            {
+                m_IsFiring.Value = !m_IsFiring.Value;
+            }
             else
-                PickupWeaponServerRpc(weaponID);
-        }
-
-        [ServerRpc(RequireOwnership = true)]
-        private void PickupWeaponServerRpc(int weaponID)
-        {
-            var weaponData = m_AllWeapons.FirstOrDefault(w => w.m_WeaponData.m_WeaponID == weaponID)?.m_WeaponData;
-            if (weaponData == null) return;
-
-            r_WeaponManagerData newWeapon = new() { m_WeaponData = weaponData };
-            m_LocalWeapons.Add(newWeapon);
-            m_NetworkWeaponIDs.Add(weaponID);
-
-            int newIndex = m_LocalWeapons.Count - 1;
-            CreateWeapon(newIndex, weaponID);
-            ChangeWeaponClientRpc(newIndex);
-        }
-
-        [ServerRpc(RequireOwnership = true)]
-        private void SwapWeaponServerRpc(int weaponID)
-        {
-            if (m_CurrentWeaponIndex.Value < 0 || m_CurrentWeaponIndex.Value >= m_LocalWeapons.Count) return;
-            var weaponData = m_AllWeapons.FirstOrDefault(w => w.m_WeaponData.m_WeaponID == weaponID)?.m_WeaponData;
-            if (weaponData == null) return;
-
-            m_LocalWeapons[m_CurrentWeaponIndex.Value] = new r_WeaponManagerData { m_WeaponData = weaponData };
-            m_NetworkWeaponIDs[m_CurrentWeaponIndex.Value] = weaponID;
-            CreateWeapon(m_CurrentWeaponIndex.Value, weaponID);
-            ChangeWeaponClientRpc(m_CurrentWeaponIndex.Value);
-        }
-
-        [ServerRpc(RequireOwnership = true)]
-        private void DropWeaponServerRpc(int index)
-        {
-            if (index < 0 || index >= m_LocalWeapons.Count) return;
-
-            var weaponData = m_LocalWeapons[index].m_WeaponData;
-            var weaponPrefab = weaponData.m_Weapon_Pickup_Prefab;
-
-            GameObject drop = Instantiate(weaponPrefab, m_Camera.transform.position, m_Camera.transform.rotation);
-            if (drop.TryGetComponent(out Rigidbody rb))
             {
-                rb.isKinematic = false;
-                rb.AddForce(m_Camera.transform.forward * m_WeaponDropForce, ForceMode.Impulse);
-                rb.AddTorque(Random.insideUnitSphere * 100f);
+                OnWeaponFireServerRpc();
             }
-            if (drop.TryGetComponent(out NetworkObject netObj))
-                netObj.Spawn();
-
-            m_LocalWeapons.RemoveAt(index);
-            m_NetworkWeaponIDs.RemoveAt(index);
         }
 
-        [ServerRpc(RequireOwnership = true)]
-        private void ChangeWeaponServerRpc(int index)
+        public void OnWeaponReload()
         {
-            if (index < 0 || index >= m_LocalWeapons.Count) return;
-            ChangeWeaponClientRpc(index);
-        }
-
-        [ClientRpc]
-        private void ChangeWeaponClientRpc(int index)
-        {
-            if (index < 0 || index >= m_LocalWeapons.Count) return;
-            if (index == m_CurrentWeaponIndex.Value)
+            if (IsServer)
             {
-                m_ChangingWeapon = false;
-                return;
+                m_IsReloading.Value = !m_IsReloading.Value;
             }
-
-            StartCoroutine(ChangeWeaponCoroutine(m_CurrentWeaponIndex.Value, index));
-        }
-
-        private void CreateWeapon(int index, int weaponID)
-        {
-            var weaponData = m_AllWeapons.FirstOrDefault(w => w.m_WeaponData.m_WeaponID == weaponID)?.m_WeaponData;
-            if (weaponData == null) return;
-
-            var data = new r_WeaponManagerData { m_WeaponData = weaponData };
-            m_LocalWeapons.Insert(index, data);
-
-            data.m_WeaponObject_FP = Instantiate(weaponData.m_Weapon_FP_Prefab, m_WeaponParent);
-            data.m_WeaponObject_TP = Instantiate(weaponData.m_Weapon_TP_Prefab, m_PlayerController.m_ThirdPersonManager.m_WeaponParent);
-        }
-
-        private IEnumerator ChangeWeaponCoroutine(int fromIndex, int toIndex)
-        {
-            m_ChangingWeapon = true;
-
-            if (fromIndex >= 0 && fromIndex < m_LocalWeapons.Count)
+            else
             {
-                m_LocalWeapons[fromIndex].m_WeaponObject_FP.UnEquipWeapon();
-                m_PlayerController.m_ThirdPersonManager.OnUnequipWeapon(m_LocalWeapons[fromIndex].m_UniqueID, 0);
-                yield return new WaitForSeconds(0.2f);
+                OnWeaponReloadServerRpc();
             }
-
-            if (toIndex >= 0 && toIndex < m_LocalWeapons.Count)
-            {
-                m_LocalWeapons[toIndex].m_WeaponObject_FP.EquipWeapon();
-                m_PlayerController.m_ThirdPersonManager.OnEquipWeapon(m_LocalWeapons[toIndex].m_UniqueID, 0);
-                m_CurrentWeaponIndex.Value = toIndex;
-            }
-
-            m_ChangingWeapon = false;
         }
+
+        public void OnShellEject()
+        {
+            if (IsServer)
+            {
+                m_ShellEjected.Value = !m_ShellEjected.Value;
+            }
+            else
+            {
+                OnShellEjectServerRpc();
+            }
+        }
+        #endregion
+
+        #region Network Methods
+        [ServerRpc]
+        private void OnWeaponFireServerRpc()
+        {
+            m_IsFiring.Value = !m_IsFiring.Value;
+        }
+
+        [ServerRpc]
+        private void OnWeaponReloadServerRpc()
+        {
+            m_IsReloading.Value = !m_IsReloading.Value;
+        }
+
+        [ServerRpc]
+        private void OnShellEjectServerRpc()
+        {
+            m_ShellEjected.Value = !m_ShellEjected.Value;
+        }
+
+        private void OnWeaponFireEvent(bool previous, bool current)
+        {
+            if (m_CurrentWeapon == null) return;
+            
+            r_WeaponController _weapon_FP = m_CurrentWeapon.m_WeaponObject_FP;
+            r_ThirdPersonWeapon _weapon_TP = m_CurrentWeapon.m_WeaponObject_TP;
+
+            if (_weapon_FP != null && _weapon_TP != null)
+            {
+                if (!IsOwner)
+                {
+                    GameObject _muzzle = Instantiate(
+                        _weapon_TP.m_MuzzleFlash, 
+                        _weapon_TP.m_MuzzlePointTransform.position, 
+                        _weapon_TP.m_MuzzlePointTransform.rotation);
+                    
+                    Destroy(_muzzle, _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_muzzleLifetime + 0.2f);
+                }
+
+                PlayAnimation(r_AnimationType.PLAY, 
+                    _weapon_FP.m_WeaponConfig.m_AnimationSettings.m_FireAnimName, 
+                    false, 
+                    m_WeaponAnimationLayer);
+            }
+        }
+
+        private void OnWeaponReloadEvent(bool previous, bool current)
+        {
+            PlayAnimation(r_AnimationType.SETTRIGGER, "Reload", false, m_WeaponAnimationLayer);
+        }
+
+        private void OnShellEjectEvent(bool previous, bool current)
+        {
+            if (m_CurrentWeapon == null) return;
+            
+            r_WeaponController _weapon_FP = m_CurrentWeapon.m_WeaponObject_FP;
+            r_ThirdPersonWeapon _weapon_TP = m_CurrentWeapon.m_WeaponObject_TP;
+
+            if (_weapon_FP != null && _weapon_TP != null)
+            {
+                Rigidbody _shell = Instantiate(
+                    _weapon_TP.m_BulletShell, 
+                    _weapon_TP.m_ShellPointTransform.position, 
+                    _weapon_TP.m_ShellPointTransform.rotation);
+
+                _shell.velocity = _shell.transform.forward * _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellEjectForce;
+
+                Vector3 _shellRotation = new Vector3(
+                    Random.Range(-_weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellRandomRotation.x, 
+                    _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellRandomRotation.x),
+                    Random.Range(-_weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellRandomRotation.y, 
+                    _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellRandomRotation.y),
+                    Random.Range(-_weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellRandomRotation.z, 
+                    _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellRandomRotation.z));
+
+                _shell.transform.localRotation = Quaternion.Euler(
+                    _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellStartRotation + _shellRotation);
+
+                Destroy(_shell, _weapon_FP.m_WeaponConfig.m_weaponFXSettings.m_shellLifeTime);
+            }
+        }
+        #endregion
+
+        #region Weapon Management
+        public void OnEquipWeapon(string _unique_weapon_id, float _equip_duration) => 
+            StartCoroutine(OnEquipWeaponCorountine(_unique_weapon_id, _equip_duration));
+
+        private IEnumerator OnEquipWeaponCorountine(string _unique_weapon_id, float _equip_duration)
+        {
+            yield return new WaitForSeconds(_equip_duration);
+
+            var _local_weapons = m_PlayerController.m_WeaponManager.m_LocalWeapons;
+            var _local_weapon = _local_weapons.Find(x => x.m_UniqueID == _unique_weapon_id);
+
+            if (_local_weapon == null || _local_weapon.m_WeaponObject_FP == null || 
+                _local_weapon.m_WeaponObject_TP == null) yield break;
+
+            PlayAnimation(r_AnimationType.PLAY, 
+                _local_weapon.m_WeaponData.m_Weapon_FP_Prefab.m_WeaponConfig.m_AnimationSettings.m_EquipAnimName, 
+                false, 
+                m_WeaponAnimationLayer);
+
+            _local_weapon.m_WeaponObject_TP.gameObject.SetActive(true);
+            _local_weapon.m_WeaponObject_TP.transform.parent = m_WeaponParent;
+            _local_weapon.m_WeaponObject_TP.transform.localPosition = 
+                _local_weapon.m_WeaponData.m_Weapon_TP_Prefab.m_DefaultPosition;
+            _local_weapon.m_WeaponObject_TP.transform.localRotation = 
+                Quaternion.Euler(_local_weapon.m_WeaponData.m_Weapon_TP_Prefab.m_DefaultRotation);
+
+            r_ThirdPersonWeaponSlot _slot = FindWeaponSlotByType(_local_weapon.m_WeaponData.m_WeaponType);
+
+            if (_slot != null)
+            {
+                r_ThirdPersonWeaponSlotItem _weapon_in_slot = 
+                    _slot.m_SlotWeapons.Find(x => x.m_UniqueID == _unique_weapon_id);
+
+                if (_weapon_in_slot != null)
+                {
+                    _slot.m_SlotWeapons.Remove(_weapon_in_slot);
+                }
+            }
+        }
+
+        public void OnUnequipWeapon(string _unique_weapon_id, float _unequip_duration) => 
+            StartCoroutine(OnUnequipWeaponCorountine(_unique_weapon_id, _unequip_duration));
+
+        private IEnumerator OnUnequipWeaponCorountine(string _unique_weapon_id, float _unequip_duration)
+        {
+            var _local_weapons = m_PlayerController.m_WeaponManager.m_LocalWeapons;
+            var _local_weapon = _local_weapons.Find(x => x.m_UniqueID == _unique_weapon_id);
+
+            if (_local_weapon == null || _local_weapon.m_WeaponObject_FP == null || 
+                _local_weapon.m_WeaponObject_TP == null) yield break;
+
+            PlayAnimation(r_AnimationType.PLAY, 
+                _local_weapon.m_WeaponObject_FP.m_WeaponConfig.m_AnimationSettings.m_UnequipAnimName, 
+                false, 
+                m_WeaponAnimationLayer);
+
+            yield return new WaitForSeconds(_unequip_duration);
+
+            if (_local_weapon == null || _local_weapon.m_WeaponObject_FP == null || 
+                _local_weapon.m_WeaponObject_TP == null) yield break;
+
+            r_ThirdPersonWeaponSlot _slot = FindWeaponSlotByType(_local_weapon.m_WeaponData.m_WeaponType);
+
+            if (_slot != null)
+            {
+                r_ThirdPersonWeaponSlotItem _slot_item = new r_ThirdPersonWeaponSlotItem 
+                { 
+                    m_ThirdPersonWeapon = _local_weapon.m_WeaponObject_TP.gameObject, 
+                    m_UniqueID = _unique_weapon_id 
+                };
+
+                _slot.m_SlotWeapons.Add(_slot_item);
+                _local_weapon.m_WeaponObject_TP.transform.parent = _slot.m_WeaponSlot;
+                _local_weapon.m_WeaponObject_TP.transform.localPosition = Vector3.zero;
+                _local_weapon.m_WeaponObject_TP.transform.localRotation = Quaternion.identity;
+            }
+        }
+        #endregion
+
+        #region Helper Methods
+        private r_ThirdPersonWeaponSlot FindWeaponSlotByType(r_WeaponItemType _type) => 
+            m_WeaponSlots.Find(x => x.m_WeaponType == _type);
+
+        public void SetLocalRendererShadows(ShadowCastingMode _Mode)
+        {
+            if (m_localRenderersOnlyShadows.Length == 0) return;
+
+            if (IsOwner)
+            {
+                foreach (var renderer in m_localRenderersOnlyShadows)
+                {
+                    if (renderer) renderer.shadowCastingMode = _Mode;
+                }
+            }
+        }
+        #endregion
+
+        #region Animation IK
+        private void OnAnimatorIK()
+        {
+            if (m_ThirdPersonAnimator == null) return;
+
+            if (m_CurrentWeapon != null && m_CurrentWeapon.m_WeaponObject_TP != null)
+            {
+                r_ThirdPersonWeapon _weapon = m_CurrentWeapon.m_WeaponObject_TP;
+
+                if (_weapon != null)
+                {
+                    float weight = _weapon.m_LeftHandIK ? m_CurrentLeftHandWeight : 0;
+                    m_ThirdPersonAnimator.SetIKPositionWeight(AvatarIKGoal.LeftHand, weight);
+                    m_ThirdPersonAnimator.SetIKRotationWeight(AvatarIKGoal.LeftHand, weight);
+                    m_ThirdPersonAnimator.SetIKPosition(AvatarIKGoal.LeftHand, _weapon.m_LeftHandTransform.position);
+                    m_ThirdPersonAnimator.SetIKRotation(AvatarIKGoal.LeftHand, _weapon.m_LeftHandTransform.rotation);
+                }
+            }
+            else
+            {
+                m_ThirdPersonAnimator.SetIKPositionWeight(AvatarIKGoal.LeftHand, m_CurrentLeftHandWeight);
+                m_ThirdPersonAnimator.SetIKRotationWeight(AvatarIKGoal.LeftHand, m_CurrentLeftHandWeight);
+            }
+        }
+        #endregion
     }
 }

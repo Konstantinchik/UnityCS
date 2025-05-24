@@ -1,14 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Photon;
-using Photon.Pun;
-using Photon.Realtime;
+using Unity.Netcode;
 using UnityEngine.Rendering;
 
 namespace ForceCodeFPS
 {
-    public class r_ThirdPersonWeapon : MonoBehaviourPun
+    public class r_ThirdPersonWeapon : NetworkBehaviour
     {
         #region Public variables
         [Header("Weapon Information")]
@@ -39,21 +37,24 @@ namespace ForceCodeFPS
         [Space(10)] public Renderer[] m_localRenderersOnlyShadows;
         #endregion
 
-        #region Functions
-        private void Start() => SetLocalRendererShadows(ShadowCastingMode.ShadowsOnly);
+        #region Unity Callbacks
+        private void Start()
+        {
+            SetLocalRendererShadows(ShadowCastingMode.ShadowsOnly);
+        }
         #endregion
 
         #region Actions
-        public void SetLocalRendererShadows(ShadowCastingMode _Mode)
+        public void SetLocalRendererShadows(ShadowCastingMode mode)
         {
-            if (this.m_localRenderersOnlyShadows.Length == 0) return;
+            if (m_localRenderersOnlyShadows.Length == 0) return;
 
-            if (photonView.IsMine)
+            if (IsOwner)
             {
-                for (int i = 0; i < this.m_localRenderersOnlyShadows.Length; i++)
+                foreach (var renderer in m_localRenderersOnlyShadows)
                 {
-                    //Disable weapon shadow for first person
-                    if (this.m_localRenderersOnlyShadows[i]) this.m_localRenderersOnlyShadows[i].shadowCastingMode = _Mode;
+                    if (renderer)
+                        renderer.shadowCastingMode = mode;
                 }
             }
         }

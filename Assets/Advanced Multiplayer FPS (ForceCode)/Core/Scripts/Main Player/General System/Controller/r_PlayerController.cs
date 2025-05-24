@@ -94,6 +94,7 @@ namespace ForceCodeFPS
             {
                 // Устанавливаем имя игрока на локальном клиенте (можно заменить на ввод из UI)
                 playerName.Value = "Player_" + NetworkManager.Singleton.LocalClientId;
+                
             }
         }
 

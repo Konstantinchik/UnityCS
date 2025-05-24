@@ -327,7 +327,7 @@ namespace ForceCodeFPS
                 }
             }
             */
-            int nextState = (int)m_CurrentGameState.Value + 1;
+            int nextState = (int)m_CurrentGameState + 1;
             if (nextState < System.Enum.GetValues(typeof(r_GameState)).Length)
                 SetGameState((r_GameState)nextState);
         }
@@ -437,7 +437,7 @@ namespace ForceCodeFPS
             Cursor.lockState = m_Paused ? CursorLockMode.None : CursorLockMode.Locked;
             m_PauseMenu.SetActive(m_Paused);
 
-            if (m_CurrentPlayer != null && m_CurrentGameState.Value != r_GameState.ENDING && m_CurrentGameState.Value != r_GameState.ENDED)
+            if (m_CurrentPlayer != null && m_CurrentGameState != r_GameState.ENDING && m_CurrentGameState != r_GameState.ENDED)
             {
                 var controller = m_CurrentPlayer.GetComponent<r_PlayerController>();
                 if (controller != null)
@@ -504,7 +504,7 @@ namespace ForceCodeFPS
                 FindInGameMenuPanel(_menu_type).m_Panel.SetActive(_state);
             }
             */
-            var panel = m_MenuPanels.Find(x => x.m_InGameMenuType == _menuType);
+            var panel = m_MenuPanels.Find(x => x.m_InGameMenuType == _menu_type);
             if (panel != null)
             {
                 HideMenuPanels();

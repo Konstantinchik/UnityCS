@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -122,8 +123,8 @@ namespace ForceCodeFPS
     }
 
     // Хранилище имени игрока для NGO
-    public static class NetworkPlayerData
+    public class NetworkPlayerData : NetworkBehaviour
     {
-        public static string LocalPlayerName = "Player";
+        public NetworkVariable<string> PlayerName = new("Player", NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
     }
 }

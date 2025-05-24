@@ -1,31 +1,36 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using Photon.Pun;
-using Photon.Realtime;
+using Unity.Netcode;
 
 namespace ForceCodeFPS
 {
-    public class r_WeaponPickup : MonoBehaviourPunCallbacks
+    public class r_WeaponPickup : NetworkBehaviour
     {
         [Header("Configuration")]
         public r_WeaponPickupBase m_WeaponPickupData;
 
         public void OnPickup()
         {
-            //RPC destroy for everyone
-            photonView.RPC(nameof(DestroyPickup), RpcTarget.AllBuffered);
+            // Запрашиваем удаление объекта у сервера
+            DestroyPickupServerRpc();
         }
 
-        [PunRPC]
-        public void DestroyPickup()
+        [ServerRpc(RequireOwnership = false)]
+        private void DestroyPickupServerRpc(ServerRpcParams rpcParams = default)
         {
-            //Only masterclient can destroy the object since it is instantiated as room object
-            if (PhotonNetwork.IsMasterClient)
+            DestroyPickupClientRpc();
+
+            // Удаляем на сервере (и объект исчезнет у всех, потому что он NetworkObject)
+            if (IsServer)
             {
-                //Destroy object for everyone
-                PhotonNetwork.Destroy(this.gameObject);
+                NetworkObject.Despawn(true);
             }
+        }
+
+        [ClientRpc]
+        private void DestroyPickupClientRpc(ClientRpcParams rpcParams = default)
+        {
+            // Можешь добавить здесь эффекты исчезновения, если нужно
         }
     }
 }

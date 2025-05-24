@@ -107,8 +107,16 @@ namespace ForceCodeFPS
         #region Public Interface
         public void SetTarget(ulong attackerClientId)
         {
-            if (NetworkManager.Singleton.SpawnManager.GetPlayerNetworkObject(attackerClientId, out var netObj))
+            if (NetworkManager.Singleton.ConnectedClients.TryGetValue(attackerClientId, out var client))
             {
+                var netObj = client.PlayerObject;
+
+                if (netObj == null)
+                {
+                    CancelSpectate();
+                    return;
+                }
+
                 m_Target = netObj.transform;
 
                 // Допустим, здоровье и оружие уже можно прочитать из NetworkPlayerState
@@ -125,6 +133,14 @@ namespace ForceCodeFPS
             {
                 CancelSpectate();
             }
+        }
+
+        public void SetTarget(string killerName, float killerHealth, string weaponName)
+        {
+            // Здесь, например:
+            UpdateUI(killerName, killerHealth, weaponName);
+            SetUIText(m_KillerNameText, "Killed By " + killerName);
+            SetSpectate();
         }
 
         public void UpdateUI(string _attacker, float _attackerHealth, string _attackerWeaponName)

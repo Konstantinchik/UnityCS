@@ -48,7 +48,7 @@ namespace ForceCodeFPS
                 var transport = NetworkManager.Singleton.NetworkConfig.NetworkTransport;
                 if (transport is Unity.Netcode.Transports.UTP.UnityTransport utp)
                 {
-                    return utp.GetCurrentRtt(clientId);
+                    return (int)utp.GetCurrentRtt(clientId);
                 }
             }
             return 0;

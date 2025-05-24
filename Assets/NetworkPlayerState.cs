@@ -8,9 +8,11 @@ namespace ForceCodeFPS
     {
         public static NetworkPlayerState LocalPlayerState;
 
+        public NetworkVariable<float> Health = new NetworkVariable<float>(100f);
         public NetworkVariable<int> Kills = new NetworkVariable<int>();
         public NetworkVariable<int> Deaths = new NetworkVariable<int>();
         public NetworkVariable<int> WeaponIndex = new NetworkVariable<int>();
+        public NetworkVariable<string> WeaponName = new NetworkVariable<string>("DefaultWeapon");
 
         public NetworkVariable<FixedString32Bytes> PlayerName = new NetworkVariable<FixedString32Bytes>();
 
@@ -19,7 +21,7 @@ namespace ForceCodeFPS
             if (IsOwner)
             {
                 LocalPlayerState = this;
-                PlayerName.Value = NetworkPlayerData.LocalPlayerName;
+                PlayerName.Value = NetworkPlayerData.PlayerName;    //LocalPlayerName;
             }
         }
 

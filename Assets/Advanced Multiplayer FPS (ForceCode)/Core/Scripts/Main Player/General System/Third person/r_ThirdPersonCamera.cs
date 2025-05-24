@@ -1,85 +1,84 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using Photon;
-using Photon.Pun;
+using Unity.Netcode;
 
 namespace ForceCodeFPS
 {
-    public class r_ThirdPersonCamera : MonoBehaviourPunCallbacks
+    public class r_ThirdPersonCamera : NetworkBehaviour
     {
         #region Public variables
         [Header("Third Person Camera")]
         public Camera m_ThirdPersonCamera;
 
         [Header("Third Person Camera Settings")]
-        public float m_DeathCameraTime;
+        public float m_DeathCameraTime = 3f;
         #endregion
 
         #region Private variables
-        //Runtime data
         [HideInInspector] public float m_CameraTime;
 
-        //Last Attacker
         [HideInInspector] public string m_LastAttackerName;
         [HideInInspector] public string m_ReceiverName;
         [HideInInspector] public float m_LastAttackerHealth;
         [HideInInspector] public string m_LastAttackerWeapon;
         #endregion
 
-        #region Functions
+        #region Unity Callbacks
         private void Update()
         {
-            if (this.m_ThirdPersonCamera.gameObject.activeSelf)
+            if (!IsOwner) return;
+
+            if (m_ThirdPersonCamera.gameObject.activeSelf)
                 HandleDeathCamera();
         }
         #endregion
 
         #region Handling
-        public void HandleDeathCamera()
+        private void HandleDeathCamera()
         {
-            if (this.m_CameraTime <= 0)
+            if (m_CameraTime <= 0)
             {
-                //Disable camera
-                this.m_ThirdPersonCamera.gameObject.SetActive(false);
+                m_ThirdPersonCamera.gameObject.SetActive(false);
 
-                if (m_LastAttackerName == PhotonNetwork.LocalPlayer.NickName)
+                // Если локальный игрок был последним атакующим — возвращаем сцену
+                if (IsLocalPlayerWasAttacker())
                 {
-                    //Reset game settings to activate scene camera
                     r_InGameManager.Instance.ResetLocalGameSettings();
                 }
                 else
                 {
-                    //Spectate enemy
+                    // Переходим в режим наблюдения
                     if (m_SpectatorController.instance)
-                        m_SpectatorController.instance.CallEventOnDie(this.m_LastAttackerName, this.transform.name, this.m_LastAttackerHealth, this.m_LastAttackerWeapon);
+                        m_SpectatorController.instance.CallEventOnDie(m_LastAttackerName, transform.name, m_LastAttackerHealth, m_LastAttackerWeapon);
                 }
 
-                //Destroy
                 Destroy(this);
             }
-            else if (this.m_CameraTime > 0)
+            else
             {
-                //Decrease timer
-                this.m_CameraTime -= Time.deltaTime;
+                m_CameraTime -= Time.deltaTime;
             }
         }
         #endregion
 
         #region Actions
-        public void SetDeathCamera(string _senderName, string _receiverName, float _senderHealth, string _senderWeaponName)
+        public void SetDeathCamera(string senderName, string receiverName, float senderHealth, string senderWeaponName)
         {
-            //Save data
-            this.m_LastAttackerName = _senderName;
-            this.m_LastAttackerHealth = _senderHealth;
-            this.m_LastAttackerWeapon = _senderWeaponName;
-            this.m_ReceiverName = _receiverName;
+            m_LastAttackerName = senderName;
+            m_ReceiverName = receiverName;
+            m_LastAttackerHealth = senderHealth;
+            m_LastAttackerWeapon = senderWeaponName;
 
-            //Enable death camera
-            this.m_ThirdPersonCamera.gameObject.SetActive(true);
+            m_ThirdPersonCamera.gameObject.SetActive(true);
+            m_CameraTime = m_DeathCameraTime;
+        }
 
-            //Reset death camera time
-            this.m_CameraTime = this.m_DeathCameraTime;
+        private bool IsLocalPlayerWasAttacker()
+        {
+            // Здесь можно заменить на свою систему имени игрока
+            var localName = NetworkManager.Singleton.LocalClient.PlayerObject.name;
+            return m_LastAttackerName == localName;
         }
         #endregion
     }
